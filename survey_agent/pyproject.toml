@@ -1,0 +1,13 @@
+[project]
+name = "survey_agent"
+version = "0.1.0"
+description = "Survey-feedback agent, deployed as a Managed Deep Agent."
+requires-python = ">=3.11"
+dependencies = [
+    "managed-deepagents==0.9.5",
+    "langchain-openai>=1.0.1",
+    "requests>=2.32.5",
+]
+
+[tool.mda]
+python-version = "3.14"

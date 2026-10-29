@@ -1,109 +1,105 @@
-# Modular Workshops
+# Survey-Feedback Agent Workshop
 
-This repository contains hands-on tutorials for learning LangChain, LangGraph, and Deep Agents.
+Hands-on workshop: build, deploy, evaluate and monitor a **survey-feedback agent** in your own LangSmith instance, then bring an agent built elsewhere (Google ADK) into the same view.
 
-This is a condensed version of LangChain Academy, intended to be run in a session with a LangChain engineer. If you're interested in going into more depth, or working through tutorials on your own, check out [LangChain Academy](https://academy.langchain.com/courses/intro-to-langgraph)! LangChain Academy has helpful pre-recorded videos from our LangChain engineers.
+The agent reads a customer survey export, measures NPS, clusters comments into themes backed by **verbatim quotes**, drafts a summary, and posts it to Slack or Teams only after a human approves.
 
 ## Prerequisites
 
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) (recommended) or pip
+- Python 3.12+ and [uv](https://docs.astral.sh/uv/getting-started/installation/)
+- A LangSmith Cloud **agent-based workspace** and an API key with `projects:create` permission (personal access token or service key, `lsv2_...`)
+- LangSmith LLM Gateway enabled for the workspace, with `openai/gpt-5.6-luna` available. Every agent and the notebook judge call models through it, so no provider key is needed locally
 
 ## Setup
 
 ```bash
-# 1. Install dependencies
 uv sync
-
-# 2. Configure environment variables
-cp .env.example .env
-# Edit .env and fill in your keys
-```
-
-| Key | Required for | Get one |
-|-----|--------------|---------|
-| `OPENAI_API_KEY` | Modules 1-4 (default model) | <https://platform.openai.com> |
-| `LANGSMITH_API_KEY` | Modules 3 & 4 (recommended for all) | <https://smith.langchain.com> |
-| `LANGSMITH_API_KEY_GATEWAY` / `WORKSPACE_ID` | Module 3 §1 (LangSmith Gateway policies) | same key as `LANGSMITH_API_KEY`; workspace ID from LangSmith Settings → Workspace |
-| `TAVILY_API_KEY` | Modules 1 & 3 (web search tool) | <https://tavily.com> |
-
-```bash
-# 3. Start Jupyter
+cp .env.example .env      # fill in your keys
 uv run jupyter notebook
 ```
 
-Open whichever module(s) your recipe calls for.
+| Key | Used for |
+|-----|----------|
+| `LANGSMITH_API_KEY` | Everything: tracing, agent registration, deployment |
+| `LANGSMITH_WORKSPACE_ID` | Org-scoped keys (agent creation, `mda deploy`) |
+| `LANGSMITH_API_KEY_GATEWAY` | Model calls through the LLM Gateway (a LangSmith key with `gateway:invoke`; often the same value as `LANGSMITH_API_KEY`) |
+| `ADK_MODEL` (optional) | Gateway model for the ADK agent (default `openai/gpt-5.6-luna`) |
+| `SURVEY_WEBHOOK_URL` (optional) | Real Slack/Teams posts. Without it, approved posts are recorded to `survey_outbox.jsonl` in your system temp directory (override with `SURVEY_OUTBOX`) |
 
-## Switching Models
+> Don't set `LANGSMITH_PROJECT`. In an agent-based workspace traces are addressed to an agent and environment; combining that with a project gives traces two destinations, and the SDK drops them.
 
-All modules import `model` from `utils/models.py`. Change one line there to swap providers — no notebook edits required.
+## Modules (Part 2, hands-on)
 
-```python
-# utils/models.py
+| Agenda module | Notebook | What you do |
+|---|---|---|
+| 1. First trace | `modules/01_deep_agents.ipynb` | Register the agent, trace to its development environment, mask emails/phone numbers before they leave the app |
+| 2. Build the agent | `modules/01_deep_agents.ipynb` | Deep Agents: filesystem for survey exports, tools, theme-clustering subagent, approval before posting; package it as a Managed Deep Agent and see what MDA adds |
+| 3. Deploy it | `modules/03_deploy_and_govern.ipynb` | `mda deploy` to development, call it through the API, approve in Agent Inbox, promote to staging |
+| 4. Evaluate and review | `modules/04_langsmith.ipynb` | Runs → dataset, quote-grounding evaluators offline and online, low scores → annotation queue |
+| 5. Monitor and alert | `modules/04_langsmith.ipynb` | Dashboards; alerts on error rate, latency, evaluator score |
+| 6. Bring your own agents | `modules/04_langsmith.ipynb` | Trace the Google ADK agent with LangSmith's ADK integration, score it with the same evaluators |
 
-# OpenAI (default)
-model = init_chat_model("openai:gpt-5.6-terra", use_responses_api=True)
+## The agents
 
-# Anthropic
-# model = init_chat_model("anthropic:claude-sonnet-4-5")
+**Managed Deep Agent (pro-code, hosted by LangSmith)**: `survey_agent/`
 
-# Azure OpenAI
-# from langchain_openai import AzureChatOpenAI
-# model = AzureChatOpenAI(azure_deployment="gpt-5.6-terra", streaming=True)
+- `agent.py`: `define_deep_agent(name="survey-feedback-agent", ...)`
+- Tools in `tools/survey.py`: `read_survey_export`, `get_survey_stats`, `search_responses`, `theme_counts`, `post_themes_to_channel`
+- `theme-clustering-agent` subagent and `interrupt_on` for `post_themes_to_channel` (`subagents.py`): the run pauses for approve / edit / reject (Agent Inbox once deployed)
+- Workflow in `instructions.md`, output format in `skills/survey-summary/SKILL.md`, both synced to Context Hub on deploy
+- `identity.py` (LangSmith API key auth) and `sandbox/` as scaffolded by `mda init`
+- `agents/local_agent.py` compiles the same definition in-process for the notebooks and evals
 
-# AWS Bedrock
-# from langchain_aws import ChatBedrockConverse
-# model = ChatBedrockConverse(provider="anthropic", model_id="...")
+```bash
+cd survey_agent && uv sync
+uv run mda dev                                                                   # local Studio
+uv run mda deploy --name survey-feedback-agent --agent-environment development   # or staging
 ```
 
-`utils/models.py` also ships a commented-out **LangSmith Gateway** block. Module 3 §1.4 walks through flipping the default to it so every model call (notebooks *and* the deployed agent) is routed through the gateway and subject to workspace policies.
+**Google ADK agent (runs outside LangSmith)**: `agents/adk_agent.py`
 
-## Deploy + Govern (Module 3)
+Same tools, task, and Gateway model (`openai/gpt-5.6-luna` via ADK's LiteLLM wrapper), built with `google-adk`, traced with LangSmith's ADK integration, `configure_google_adk()`. A `before_tool_callback` blocks posting unless approval is set in session state.
 
-Module 3 first creates a workspace-level **LangSmith Gateway** policy (PII / secrets redaction), routes the model through the gateway, then deploys the agent at `agents/deep_agent/` to LangSmith via the `langgraph` CLI (installed by `uv sync`). The deploy config is `langgraph.json` at the workshop root.
+```bash
+uv run python -m agents.adk_agent "Summarize the top survey themes."
+```
 
-Because `agents/deep_agent/agent.py` imports `model` from `utils.models`, whichever block is active in `utils/models.py` at deploy time is what ships — flip on the gateway block and the deployed agent inherits it with no extra flags.
-
-Your `LANGSMITH_API_KEY` must have deployment permissions (use a `lsv2_sk_...` service key). The gateway block reads `LANGSMITH_API_KEY_GATEWAY` (the same key under a non-reserved name, since `langgraph deploy` strips `LANGSMITH_API_KEY` during upload).
-
-## Engine (Module 5)
-
-Module 5 introduces **LangSmith Engine** — it reads your deployed agent's production traces, clusters recurring failures into issues, diagnoses the root cause against your connected source code, and proposes fixes as GitHub PRs. It runs on the Module 3 deployment, driven through an *assistant* (a saved graph configuration) that swaps in a deliberately broken search tool so Engine has a clear, reproducible issue to find.
-
-Engine's first analysis takes ~20 minutes, so it's best primed before a session. Needs the Module 3 deployment and a `LANGSMITH_API_KEY`.
-
-## Project Structure
+## Project structure
 
 ```
-modular-workshops/
-├── README.md                       (this file — recipes + setup)
-├── pyproject.toml                  (shared dependencies)
-├── .env.example
-├── langgraph.json                  (registers agents/deep_agent for langgraph dev)
-├── utils/
+├── survey_agent/                  Managed Deep Agents project (deployed with `mda deploy`)
+│   ├── agent.py, subagents.py, instructions.md, skills/, tools/survey.py
+│   └── data/survey_export.csv     synthetic survey export (swap in your sanitized export)
 ├── agents/
-│   ├── research_agent.py           (shared agent factory — Module 1 references, Module 4 imports for eval)
-│   └── deep_agent/                 (deployable + governed agent for Module 3)
-│       ├── agent.py
-│       ├── AGENTS.md
-│       └── skills/
-│           ├── linkedin-post/SKILL.md
-│           └── twitter-post/SKILL.md
-├── images/                         (diagrams used by the notebooks)
+│   ├── local_agent.py             compiles survey_agent/ in-process (notebooks, evals)
+│   └── adk_agent.py               Google ADK agent (same tools)
+├── utils/
+│   ├── models.py                  model switch (OpenAI, Gateway, Anthropic, Gemini/Vertex, Azure, Bedrock)
+│   ├── agent_registry.py          register agents, look up environments
+│   └── langsmith_rules.py         online evaluators + annotation-queue rules
 └── modules/
-    ├── 01_deep_agents.ipynb        (Module 1)
-    ├── 02_langgraph.ipynb          (Module 2)
-    ├── 03_deploy_and_govern.ipynb  (Module 3)
-    └── 04_langsmith.ipynb          (Module 4)
+    ├── 01_deep_agents.ipynb       Modules 1–2
+    ├── 03_deploy_and_govern.ipynb Module 3
+    ├── 04_langsmith.ipynb         Modules 4–6
+    └── legacy/                    previous modular-workshop notebooks
 ```
 
-## Common Issues
+## Switching models
 
-**`langgraph deploy` fails with 403 / permission denied**
-Your API key is a personal token. Generate a service key (`lsv2_sk_...`) in LangSmith settings.
+All three default to `gpt-5.6-luna` through the LangSmith LLM Gateway:
 
-**Notebook can't find `utils` / `agents`**
-Each module's setup cell prepends `project_root` (the workshop root) to `sys.path`. If you moved a notebook, update the `Path().resolve().parent` line to point at the workshop root.
+- **Survey agent**: `model="langsmith:openai/gpt-5.6-luna"` in `survey_agent/agent.py`, used both deployed and locally. Change the ID after `langsmith:` to any Gateway model, e.g. `langsmith:anthropic/claude-sonnet-5`.
+- **ADK agent**: `ADK_MODEL` (default `openai/gpt-5.6-luna`), called through ADK's LiteLLM wrapper at the Gateway's OpenAI-compatible endpoint. A `gemini-*` value calls Gemini natively instead.
+- **Notebook judge and helpers**: `model` from `utils/models.py`; uncomment one block there to swap providers.
 
-## For LangChain Internal Users
-Please refer to this linked [Notion document](https://app.notion.com/p/Modular-Workshops-37d808527b1780318063fd210446aa03?source=copy_link) for instructions on setup and usage.
+## Common issues
+
+**`mda deploy` fails on auth or region**: `mda` reads `survey_agent/.env` before the shell. It needs `LANGSMITH_API_KEY`, plus `LANGSMITH_WORKSPACE_ID` for org-scoped keys and `LANGSMITH_ENDPOINT` outside GCP US. No model key is needed because the agent uses the Gateway. Module 3 writes this file for you.
+
+**Model calls return 401/403/404**: the Gateway key needs `gateway:invoke`, and `openai/gpt-5.6-luna` must be available in the workspace's Gateway (an OpenAI provider secret, or a Gateway Credits model).
+
+**`mda deploy` stops on a Context Hub conflict**: someone edited `instructions.md` or a skill in Context Hub since the last deploy. Run it in a terminal to answer the prompt, or pass `--context-strategy overwrite|keep-hub`.
+
+**Traces don't appear**: check that `LANGSMITH_PROJECT` is unset and that the agent exists (`ensure_agent` in Module 1). Agent addressing needs `langsmith>=0.14.9`.
+
+**Notebook can't find `utils` / `agents`**: each setup cell adds the workshop root to `sys.path`; run notebooks from `modules/`.

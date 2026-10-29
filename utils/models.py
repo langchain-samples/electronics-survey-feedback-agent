@@ -22,16 +22,24 @@ API_KEY_ENV = "OPENAI_API_KEY"
 # --- OpenAI via the LangSmith LLM Gateway (Module 3 §1.4) ---
 # Routes every model call through the Gateway so workspace policies
 # (PII / secrets / allow-lists / cost caps) are enforced.
-# MODEL_SPEC = {
-#     "model": "openai:gpt-5.6-luna",
-#     "base_url": "https://gateway.smith.langchain.com/openai",
-#     "use_responses_api": True,
-# }
-# API_KEY_ENV = "LANGSMITH_API_KEY_GATEWAY"
+MODEL_SPEC = {
+    "model": "openai:gpt-5.6-luna",
+    "base_url": "https://gateway.smith.langchain.com/openai",
+    "use_responses_api": True,
+}
+API_KEY_ENV = "LANGSMITH_API_KEY_GATEWAY"
 
 # --- Anthropic ---
 # MODEL_SPEC = {"model": "anthropic:claude-sonnet-5"}
 # API_KEY_ENV = "ANTHROPIC_API_KEY"
+
+# --- Google Gemini (Gemini API key, or Vertex AI) ---
+# Requires `uv add langchain-google-genai`. For Vertex AI instead of an API key,
+# add "vertexai": True, "project": "<gcp-project>", "location": "us-central1" to
+# MODEL_SPEC, set API_KEY_ENV = None, and replace the `model = ...` line below
+# with `model = init_chat_model(**MODEL_SPEC)` (auth comes from gcloud ADC).
+# MODEL_SPEC = {"model": "google_genai:gemini-3.8-flash"}
+# API_KEY_ENV = "GOOGLE_API_KEY"
 
 # --- Azure OpenAI ---
 # MODEL_SPEC = {"model": "azure_openai:gpt-5.6-terra", "azure_deployment": "gpt-5.6-terra"}

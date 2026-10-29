@@ -55,6 +55,9 @@ Thumbs.db
 deep_agents_memory.db
 deep_agents_memory.db-*
 
+# Managed Deep Agents build output
+survey_agent/.mda/
+
 # Harbor (Module 4, Environment Evals) — local job output + scratch workspace
 jobs/
 .dev-workspace/

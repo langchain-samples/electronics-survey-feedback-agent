@@ -18,25 +18,30 @@ dependencies = [
     "langchain-openai>=1.0.1",
     "langgraph>=1.2.10",
     "langgraph-checkpoint-sqlite>=3.1.0",
-    "langgraph-cli[inmem]>=0.4.21",
-    "langsmith>=0.10.13",
+    "langgraph-cli[inmem]>=0.4.32",
+    "langsmith>=0.14.12",
     "notebook>=7.4.7",
     "python-dotenv>=1.1.1",
     "requests>=2.32.5",
     "sqlalchemy>=2.0",
     "tavily-python>=0.7.25",
     "langchain-core>=1.5.3",
+    "managed-deepagents==0.9.5",
 ]
 
-# Harbor (Module 4, Environment Evals) is a dependency *group*, not a project
-# dependency: `uv sync` installs it, but the LangGraph deploy image builds with
-# `uv pip install -e .`, which reads [project.dependencies] only -- so harbor's
-# tree stays out of an image that never uses it.
+# ADK (Google Agent Development Kit, Module 3 "Bring your own agents") and Harbor
+# are dependency *groups*, not project dependencies: `uv sync` installs them, but
+# the LangGraph deploy image builds with `uv pip install -e .`, which reads
+# [project.dependencies] only -- so their trees stay out of an image that never
+# uses them.
 [dependency-groups]
+adk = [
+    "langsmith[google-adk]>=0.14.12",
+]
 harbor = ["harbor[langsmith]==0.22.0"]
 
 [tool.uv]
-default-groups = ["harbor"]
+default-groups = ["adk", "harbor"]
 
 [tool.setuptools]
 packages = ["agents", "utils"]
