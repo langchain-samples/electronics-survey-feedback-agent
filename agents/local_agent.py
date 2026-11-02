@@ -25,6 +25,7 @@ if str(SURVEY_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(SURVEY_AGENT_DIR))
 
 from agent import agent as definition  # noqa: E402
+from utils.models import model
 
 DEFINITION = definition.config
 INSTRUCTIONS_PATH = SURVEY_AGENT_DIR / "instructions.md"
@@ -41,7 +42,7 @@ def build_agent(*, interrupts: bool = True, checkpointer=None):
     cfg = DEFINITION
     return create_deep_agent(
         name=cfg["name"],
-        model=cfg["model"],
+        model=model,
         tools=cfg.get("tools", []),
         subagents=cfg.get("subagents", []),
         interrupt_on=cfg.get("interrupt_on", {}) if interrupts else {},

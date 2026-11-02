@@ -52,4 +52,7 @@ API_KEY_ENV = "LANGSMITH_API_KEY_GATEWAY"
 # MODEL_SPEC = {"model": "bedrock_converse:anthropic.claude-sonnet-4-20250514-v1:0"}
 # API_KEY_ENV = None
 
-model = init_chat_model(**MODEL_SPEC, api_key=os.environ[API_KEY_ENV])
+# Org-scoped LangSmith keys must name the workspace on Gateway calls (X-Tenant-ID).
+_workspace = os.environ.get("LANGSMITH_WORKSPACE_ID")
+_headers = {"default_headers": {"X-Tenant-ID": _workspace}} if _workspace and "gateway.smith" in MODEL_SPEC.get("base_url", "") else {}
+model = init_chat_model(**MODEL_SPEC, **_headers, api_key=os.environ[API_KEY_ENV])
