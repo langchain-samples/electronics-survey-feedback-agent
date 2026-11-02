@@ -67,15 +67,18 @@ uv run python -m agents.adk_agent "Summarize the top survey themes."
 ## Project structure
 
 ```
+├── app.py                         Streamlit UI for all three agents
 ├── survey_agent/                  Managed Deep Agents project (deployed with `mda deploy`)
 │   ├── agent.py, subagents.py, instructions.md, skills/, tools/survey.py
 │   └── data/survey_export.csv     synthetic survey export (swap in your sanitized export)
 ├── agents/
 │   ├── local_agent.py             compiles survey_agent/ in-process (notebooks, evals)
-│   └── adk_agent.py               Google ADK agent (same tools)
+│   ├── adk_agent.py               Google ADK agent (same tools)
+│   └── chat_backends.py           one send/resume interface over Fleet, ADK, and MDA (used by app.py)
 ├── utils/
 │   ├── models.py                  model switch (OpenAI, Gateway, Anthropic, Gemini/Vertex, Azure, Bedrock)
 │   ├── agent_registry.py          register agents, look up environments
+│   ├── fleet_to_mda.py            Fleet export → Managed Deep Agents project converter
 │   └── langsmith_rules.py         online evaluators + annotation-queue rules
 └── modules/
     ├── 01_deep_agents.ipynb       Modules 1–2
@@ -83,6 +86,33 @@ uv run python -m agents.adk_agent "Summarize the top survey themes."
     ├── 04_langsmith.ipynb         Modules 4–6
     └── legacy/                    previous modular-workshop notebooks
 ```
+
+## One UI for all three agents
+
+```bash
+uv run streamlit run app.py
+```
+
+Pick the **Fleet agent**, **Google ADK agent**, or **Managed Deep Agent** in the sidebar. Every agent gets the same chat, suggested questions, an "Agent steps" panel listing its tool calls, and the same **Approve / Reject** card when it tries to post a summary (MDA `interrupt_on`, or the ADK `before_tool_callback` block). Each agent keeps its own conversation thread.
+
+| Agent | How the UI reaches it | Settings (`.env` or sidebar → *Connection settings*) |
+|---|---|---|
+| Fleet | Agent Server API via the LangGraph SDK, `X-Auth-Scheme: langsmith-api-key` | `FLEET_API_URL`, `FLEET_AGENT_ID` (from *View code snippets* in Fleet); `LANGSMITH_API_KEY` must be the agent owner's PAT |
+| Google ADK | In-process, `agents/adk_agent.py` (`chat_turn`, persistent session) | none beyond the Gateway keys |
+| Managed Deep Agent | In-process compile of `survey_agent/`, or any deployment | `MDA_DEPLOYMENT_URL` + `MDA_ASSISTANT_ID` to call a deployed MDA instead |
+
+## Convert a Fleet agent to a Managed Deep Agent
+
+In Fleet, open the agent and **Export to code** (a `.zip`). Then:
+
+```bash
+uv run python -m utils.fleet_to_mda My_Fleet_Agent.zip          # or the unzipped folder
+cd my_fleet_agent_agent && cp .env.example .env && uv sync && uv run mda build
+```
+
+The output folder defaults to `<agent_name>_agent` (override with `--out`). Fleet exports carry workspace IDs and whatever the prompts mention, so keep exports and converted agents out of public repos unless you've reviewed them.
+
+The converter maps `AGENTS.md` → `instructions.md`, `skills/` → `skills/`, `subagents/<name>/` → `subagents.py`, the Fleet model → `langsmith:<provider>/<model>` (Gateway; `--no-gateway` keeps it), and per-tool approvals → `interrupt_on`. Fleet built-in tools with an adapter become authored tools under the same name (BigQuery → `tools/bigquery.py`, read-only enforced by a dry run plus a dataset allowlist); other MCP tools go to `tools/mcp.py`. It prints, and writes into the project's README, everything that needs a human: credentials, placeholder skills, inconsistent prompts. Options: `--out`, `--name`, `--model`, `--force`.
 
 ## Switching models
 

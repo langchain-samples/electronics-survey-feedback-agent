@@ -57,6 +57,15 @@ deep_agents_memory.db-*
 
 # Managed Deep Agents build output
 survey_agent/.mda/
+.mda/
+
+# Local-only: customer Fleet exports, agents converted from them, workshop docs,
+# and superseded notebooks (customer names, project IDs, personal details)
+Thank_You_Survey_Insights/
+Thank_You_Survey_Insights.zip
+thank_you_survey_insights_agent/
+*.docx
+modules/legacy/
 
 # Harbor (Module 4, Environment Evals) — local job output + scratch workspace
 jobs/

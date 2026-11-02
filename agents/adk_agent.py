@@ -67,7 +67,10 @@ def build_model(model_id: str = ADK_MODEL):
     )
     # "openai/" selects LiteLLM's OpenAI-compatible client; the Gateway receives
     # the rest ("openai/gpt-5.6-luna") as the model ID and routes on it.
-    return LiteLlm(model=f"openai/{model_id}", api_base=GATEWAY_BASE_URL, api_key=api_key)
+    # Org-scoped keys must name the workspace on every Gateway request.
+    workspace_id = os.environ.get("LANGSMITH_WORKSPACE_ID")
+    extra = {"extra_headers": {"X-Tenant-ID": workspace_id}} if workspace_id else {}
+    return LiteLlm(model=f"openai/{model_id}", api_base=GATEWAY_BASE_URL, api_key=api_key, **extra)
 
 
 MODEL = build_model()
@@ -174,6 +177,62 @@ async def run_adk_agent(prompt: str, *, approved_to_post: bool = False) -> str:
             if event.is_final_response() and event.content and event.content.parts:
                 final = "".join(p.text or "" for p in event.content.parts)
     return final
+
+
+_CHAT_SESSIONS = InMemorySessionService()
+_CHAT_RUNNER: Runner | None = None
+
+
+async def chat_turn(
+    prompt: str,
+    *,
+    session_id: str,
+    user_id: str = "workshop-user",
+    approved_to_post: bool = False,
+) -> dict:
+    """Run one turn of a multi-turn conversation (used by the Streamlit UI).
+
+    Sessions persist in memory across turns, so follow-up questions keep
+    context. `approved_to_post` is written into session state for this turn
+    only; `_require_approval` blocks posting while it is False.
+
+    Returns:
+        {"text": final answer, "steps": tool calls made, "blocked_post": args of
+        a post_themes_to_channel call that was blocked for approval, or None}.
+    """
+    global _CHAT_RUNNER
+    enable_langsmith_tracing()
+    if _CHAT_RUNNER is None:
+        _CHAT_RUNNER = Runner(agent=root_agent, app_name=APP_NAME, session_service=_CHAT_SESSIONS)
+    session = await _CHAT_SESSIONS.get_session(
+        app_name=APP_NAME, user_id=user_id, session_id=session_id
+    )
+    if session is None:
+        await _CHAT_SESSIONS.create_session(
+            app_name=APP_NAME, user_id=user_id, session_id=session_id
+        )
+
+    final, steps, blocked_post = "", [], None
+    with ls.tracing_context(address=_trace_address) if _trace_address else nullcontext():
+        async for event in _CHAT_RUNNER.run_async(
+            user_id=user_id,
+            session_id=session_id,
+            new_message=types.Content(role="user", parts=[types.Part(text=prompt)]),
+            state_delta={"approved_to_post": approved_to_post},
+        ):
+            for call in event.get_function_calls():
+                steps.append({"name": call.name, "args": dict(call.args or {})})
+                if call.name == "post_themes_to_channel":
+                    blocked_post = dict(call.args or {})
+            for resp in event.get_function_responses():
+                if resp.name == "post_themes_to_channel" and (resp.response or {}).get("status") != "blocked":
+                    blocked_post = None
+            if event.is_final_response() and event.content and event.content.parts:
+                text = "".join(p.text or "" for p in event.content.parts)
+                if text:
+                    final = text
+    # Every turn rewrites approved_to_post, so an approval covers one turn only.
+    return {"text": final, "steps": steps, "blocked_post": None if approved_to_post else blocked_post}
 
 
 if __name__ == "__main__":

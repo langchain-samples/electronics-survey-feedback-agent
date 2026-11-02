@@ -29,8 +29,8 @@ dependencies = [
     "managed-deepagents==0.9.5",
 ]
 
-# ADK (Google Agent Development Kit, Module 3 "Bring your own agents") and Harbor
-# are dependency *groups*, not project dependencies: `uv sync` installs them, but
+# ADK (Google Agent Development Kit, Module 3 "Bring your own agents"), Harbor,
+# and the Streamlit UI (app.py) are dependency *groups*, not project dependencies: `uv sync` installs them, but
 # the LangGraph deploy image builds with `uv pip install -e .`, which reads
 # [project.dependencies] only -- so their trees stay out of an image that never
 # uses them.
@@ -39,9 +39,12 @@ adk = [
     "langsmith[google-adk]>=0.14.12",
 ]
 harbor = ["harbor[langsmith]==0.22.0"]
+ui = [
+    "streamlit>=1.66.1",
+]
 
 [tool.uv]
-default-groups = ["adk", "harbor"]
+default-groups = ["adk", "harbor", "ui"]
 
 [tool.setuptools]
 packages = ["agents", "utils"]
